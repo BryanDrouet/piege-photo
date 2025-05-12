@@ -50,3 +50,8 @@ CREATE TABLE users (
 );
 ```
 3. Lancer le site sur le fichier `home.php` *(si lancement sur 404.php alors cliquez sur `Retour à la page d'accueil`)*
+
+---
+
+# A noter !
+Les fichiers `assets/RP2_spoiler.png` et `documents/revueProjet2Bryan.pdf` ne sont pas disponibles en ligne sur le GitHub car ceux-si sont trop lourds (33,2 Mo et 222,7 Mo respectivement)
