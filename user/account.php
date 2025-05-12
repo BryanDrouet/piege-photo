@@ -153,9 +153,9 @@ if (isset($_POST['delete_account'])) {
 
             <div id="deleteAccountModal" style="display:none" class="delete-account-modal">
                 <div class="delete-account-modal-content">
-                    <h2>Supprimer votre compte</h2>
+                    <h2 style="margin-top: 0">Supprimer votre compte</h2>
                     <p>Entrez votre mot de passe pour confirmer la suppression de votre compte :</p>
-                    <form method="post" action="account.php">
+                    <form style="display:contents;" method="post" action="account.php">
                         <input type="password" name="confirm_delete_password" placeholder="Mot de passe" required style="width:100%; padding:8px; margin-bottom:10px;"><br>
                         <button type="submit" name="delete_account" style="background:#ff3838; color:white; padding:10px 20px;">Confirmer la suppression</button>
                         <button type="button" onclick="closeDeleteAccountModal()" style="margin-left:10px;">Annuler</button>
@@ -203,6 +203,6 @@ if (isset($_POST['delete_account'])) {
     </script>
 </body>
 
-<?php include 'footer.php'; ?>
+<?php include '../footer.php'; ?>
 
 </html>
