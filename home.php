@@ -46,6 +46,7 @@ session_start();
         <p style="margin-bottom:0px"><strong>Bryan :</strong> 14 mai 2025 à 11h</p>
         <p style="margin:0px"><strong>Lucien :</strong> 16 mai 2025 à 14h50</p>
         <p style="margin-top:0px"><strong>Nathan :</strong> 16 mai 2025 à 15h20</p>
+        <p>Retrouvez les différentes revues de : <a href="documents/revueProjet2Bryan.pdf" target="_blank">Bryan,</a> Lucien & Nathan</p>
         <img title="1ère Image de la Diapo de la Revue de Projet 2" alt="1ère Image de la Diapo de la Revue de Projet 2" src="assets/RP2_spoiler.png" class="homeSpoiler">
 
         <div id="imageModal" class="modal">
