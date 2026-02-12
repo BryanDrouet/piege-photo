@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suivi Crues & Prévisions - Saint-Laurent / Mauléon</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns/locale/fr/_index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <style>
+        :root { --primary: #0055a4; --danger: #d32f2f; --warning: #ff9800; --bg: #f0f2f5; --card: #ffffff; --text: #1c1e21; }
+        * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+        
+        #loadingBarContainer { position: fixed; top: 0; left: 0; width: 100%; height: 4px; background: transparent; z-index: 9999; }
+        #loadingBar { height: 100%; width: 0%; background: var(--warning); transition: width 0.3s ease, opacity 0.3s; box-shadow: 0 0 10px var(--warning); }
+
+        /* Console de Debug */
+        #debugConsole { display: none; position: fixed; bottom: 0; left: 0; width: 100%; height: 200px; background: #1e1e1e; color: #00ff00; font-family: monospace; font-size: 12px; padding: 10px; overflow-y: auto; z-index: 10001; border-top: 2px solid var(--warning); }
+
+        #notificationContainer { position: fixed; bottom: 20px; right: 20px; z-index: 10000; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .toast { background: #333; color: white; padding: 12px 20px; border-radius: 8px; font-size: 0.9rem; box-shadow: 0 4px 12px rgba(0,0,0,0.2); animation: slideIn 0.3s ease; border-left: 4px solid var(--danger); pointer-events: auto; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        body { background-color: var(--bg); color: var(--text); margin: 0; padding: 15px 10px 10px 10px; display: flex; justify-content: center; }
+        .dashboard { width: 100%; max-width: 1100px; display: flex; flex-direction: column; gap: 15px; }
+        .card { background: var(--card); border-radius: 12px; padding: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .header h1 { margin: 0; font-size: 1.4rem; color: var(--primary); }
+        .live-status { display: flex; align-items: center; gap: 10px; font-weight: bold; font-size: 1.3rem; }
+        .pulse { width: 12px; height: 12px; background: #4caf50; border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0px rgba(76,175,80, 0.7); } 100% { box-shadow: 0 0 0 10px rgba(76,175,80, 0); } }
+        .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
+        label { display: block; margin-bottom: 5px; font-size: 0.85rem; font-weight: 600; color: #555; }
+        select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; cursor: pointer; }
+        .checkbox-group { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 5px; }
+        .check-item { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; cursor: pointer; }
+        .chart-container { position: relative; height: 55vh; min-height: 400px; width: 100%; cursor: crosshair; }
+        #lastUpdate { font-size: 0.8rem; color: #888; text-align: right; margin-top: 5px; }
+        .btn-reset { background: #eee; border: 1px solid #ccc; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+
+<div id="loadingBarContainer"><div id="loadingBar"></div></div>
+<div id="notificationContainer"></div>
+<div id="debugConsole"><strong>-- CONSOLE DEBUG --</strong><br></div>
+
+<div class="dashboard">
+    <div class="card">
+        <div class="header">
+            <div>
+                <h1 id="displayName">St-Laurent-sur-Sèvre</h1>
+                <div id="displayId" style="font-size: 0.8rem; color: #666;">Station M703243010</div>
+            </div>
+            <div class="live-status">
+                <button class="btn-reset" onclick="resetZoom()">Réinitialiser Zoom</button>
+                <div class="pulse"></div>
+                <span id="currentLevel">0.00</span> m
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="controls">
+            <div>
+                <label>Station (Secteur Mauléon)</label>
+                <select id="stationSelect" onchange="updateURLAndFetch()">
+                    <option value="M703243010">St-Laurent-sur-Sèvre (Sèvre)</option>
+                    <option value="M711401010">Mauléon (L'Ouin)</option>
+                    <option value="M702241010">St-Amand-sur-Sèvre (Sèvre)</option>
+                    <option value="M700241010">Châtillon-sur-Sèvre (Sèvre)</option>
+                </select>
+            </div>
+            <div>
+                <label>Observation</label>
+                <select id="timeRange" onchange="updateURLAndFetch()">
+                    <option value="24">24 heures</option>
+                    <option value="48">48 heures</option>
+                    <option value="168">7 jours</option>
+                </select>
+            </div>
+            <div>
+                <label>Seuils & Options</label>
+                <div class="checkbox-group" id="thresholdsGroup"></div>
+                <label class="check-item" style="margin-top: 5px; color: var(--warning); font-weight: bold;">
+                    <input type="checkbox" id="showPrev" onchange="updateURLAndFetch()"> Voir Prévisions
+                </label>
+            </div>
+        </div>
+        <div id="lastUpdate">MàJ auto : --:--</div>
+    </div>
+
+    <div class="card chart-container">
+        <canvas id="floodChart"></canvas>
+    </div>
+</div>
+
+<script>
+    const stationsConfig = {
+        "M703243010": { name: "St-Laurent-sur-Sèvre", thresholds: [{y: 3.1, label: "1995 (3.1m)", color: "red"}, {y: 1.95, label: "2021 (1.95m)", color: "orange"}] },
+        "M711401010": { name: "Mauléon (L'Ouin)", thresholds: [{y: 2.36, label: "Historique (2.36m)", color: "red"}] },
+        "M702241010": { name: "St-Amand-sur-Sèvre", thresholds: [{y: 3.2, label: "Ref. Amont (3.2m)", color: "red"}] },
+        "M700241010": { name: "Châtillon-sur-Sèvre", thresholds: [{y: 2.8, label: "Alerte (2.8m)", color: "red"}] }
+    };
+
+    let myChart;
+    const ctx = document.getElementById('floodChart').getContext('2d');
+
+    // SYSTEME DE LOGS
+    function log(msg, obj = null) {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('debug') === 'true') {
+            const debugConsole = document.getElementById('debugConsole');
+            debugConsole.style.display = 'block';
+            const time = new Date().toLocaleTimeString();
+            debugConsole.innerHTML += `[${time}] ${msg}<br>`;
+            if (obj) debugConsole.innerHTML += `<span style="color: #fff">${JSON.stringify(obj).substring(0, 150)}...</span><br>`;
+            debugConsole.scrollTop = debugConsole.scrollHeight;
+        }
+        console.log(msg, obj || '');
+    }
+
+    function notify(message, type = 'error') {
+        log(`NOTIFICATION [${type}]: ${message}`);
+        const container = document.getElementById('notificationContainer');
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        if(type === 'warning') toast.style.borderLeftColor = 'var(--warning)';
+        toast.innerText = message;
+        container.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 5000);
+    }
+
+    function updateURLAndFetch() {
+        const station = document.getElementById('stationSelect').value;
+        const timeRange = document.getElementById('timeRange').value;
+        const showPrev = document.getElementById('showPrev').checked;
+        
+        const url = new URL(window.location);
+        url.searchParams.set('station', station);
+        url.searchParams.set('range', timeRange);
+        url.searchParams.set('prev', showPrev);
+        window.history.pushState({}, '', url);
+        
+        document.getElementById('displayName').innerText = stationsConfig[station].name;
+        document.getElementById('displayId').innerText = "Station " + station;
+        updateThresholdUI(station);
+        fetchData();
+    }
+
+    function loadSettingsFromURL() {
+        const params = new URLSearchParams(window.location.search);
+        if(params.has('station')) document.getElementById('stationSelect').value = params.get('station');
+        if(params.has('range')) document.getElementById('timeRange').value = params.get('range');
+        if(params.has('prev')) document.getElementById('showPrev').checked = params.get('prev') === 'true';
+        else document.getElementById('showPrev').checked = true;
+        log("Settings chargés depuis URL");
+    }
+
+    function initChart() {
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: { datasets: [
+                { label: 'Observations (m)', borderColor: '#0055a4', backgroundColor: 'rgba(0, 85, 164, 0.1)', borderWidth: 3, data: [], fill: true, tension: 0.2, pointRadius: 0, pointHoverRadius: 6, z: 10 },
+                { label: 'Prévisions (m)', borderColor: '#ff9800', backgroundColor: 'rgba(255, 152, 0, 0.2)', borderDash: [5, 5], borderWidth: 2, data: [], fill: true, tension: 0.4, pointRadius: 3, pointHoverRadius: 6, z: 5 }
+            ]},
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: { type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } }, adapters: { date: { locale: window.dateFnsLocaleFr } } },
+                    y: { title: { display: true, text: 'Mètres (m)' }, grace: '5%' }
+                },
+                plugins: {
+                    zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }, pan: { enabled: true, mode: 'x' } },
+                    legend: { position: 'bottom' },
+                    tooltip: { callbacks: {
+                        title: (context) => new Date(context[0].parsed.x).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                        label: (context) => context.dataset.label + ": " + context.parsed.y.toFixed(2) + " m"
+                    }}
+                }
+            }
+        });
+        log("Graphique initialisé");
+    }
+
+    function resetZoom() { myChart.resetZoom(); }
+    function setLoader(percent) {
+        const bar = document.getElementById('loadingBar');
+        bar.style.opacity = "1";
+        bar.style.width = percent + "%";
+        if(percent >= 100) setTimeout(() => { bar.style.opacity = "0"; setTimeout(() => bar.style.width = "0%", 300); }, 500);
+    }
+
+    async function fetchData() {
+        setLoader(20);
+        const stationId = document.getElementById('stationSelect').value;
+        const hours = document.getElementById('timeRange').value;
+        const showPrev = document.getElementById('showPrev').checked;
+        const dateStart = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+        
+        log(`FETCHING DATA for ${stationId}...`);
+
+        try {
+            // Observations
+            const obsUrl = `https://hubeau.eaufrance.fr/api/v2/hydrometrie/observations_tr?code_entite=${stationId}&grandeur_hydro=H&date_debut_obs=${dateStart}&size=2000`;
+            log(`CALLING HubEau: ${obsUrl}`);
+            const resObs = await fetch(obsUrl);
+            setLoader(50);
+            if(!resObs.ok) throw new Error(`Erreur API Observations (${resObs.status})`);
+            const jsonObs = await resObs.json();
+            const pointsObs = jsonObs.data.map(obs => ({ x: new Date(obs.date_obs), y: obs.resultat_obs / 1000 })).sort((a, b) => a.x - b.x);
+            log(`Observations reçues: ${pointsObs.length} points`);
+
+            // Prévisions
+            let pointsPrev = [];
+            if (showPrev) {
+                setLoader(70);
+                try {
+                    const prevUrl = `https://www.vigicrues.gouv.fr/services/prevision.json?CdEntVigiCru=${stationId}&TypEntVigiCru=7&FormatDate=iso`;
+                    log(`CALLING Vigicrues: ${prevUrl}`);
+                    const resPrev = await fetch(prevUrl);
+                    if (resPrev.ok) {
+                        const jsonPrev = await resPrev.json();
+                        log("JSON Vigicrues reçu", jsonPrev);
+                        
+                        // Analyse de la structure (Simul ou Prevision)
+                        let rawPrevis = [];
+                        if (jsonPrev.Simul && jsonPrev.Simul[0]) rawPrevis = jsonPrev.Simul[0].Previs;
+                        else if (jsonPrev.Prevision) rawPrevis = jsonPrev.Prevision;
+
+                        if (rawPrevis && rawPrevis.length > 0) {
+                            pointsPrev = rawPrevis.map(p => ({ x: new Date(p.Dt), y: p.Val / 100 })).sort((a, b) => a.x - b.x);
+                            log(`Prévisions reçues: ${pointsPrev.length} points`);
+                        } else {
+                            notify(`Aucune prévision trouvée dans le flux Vigicrues.`, 'warning');
+                        }
+                    } else {
+                        log(`Erreur Vigicrues status: ${resPrev.status}`);
+                        notify(`Erreur Vigicrues (${resPrev.status})`, 'warning');
+                    }
+                } catch (e) { log(`EXCEPTION Prévisions: ${e.message}`); }
+            }
+
+            if(pointsObs.length > 0) {
+                const latest = pointsObs[pointsObs.length - 1];
+                document.getElementById('currentLevel').innerText = latest.y.toFixed(2);
+                document.getElementById('lastUpdate').innerText = "Mesure : " + latest.x.toLocaleTimeString('fr-FR');
+                myChart.data.datasets[0].data = pointsObs;
+                myChart.data.datasets[1].data = pointsPrev;
+                updateChartLines();
+            }
+            setLoader(100);
+        } catch (e) { 
+            log(`CRITICAL ERROR: ${e.message}`);
+            notify(e.message);
+            setLoader(100);
+        }
+    }
+
+    function updateChartLines() {
+        const stationId = document.getElementById('stationSelect').value;
+        const obsData = myChart.data.datasets[0].data;
+        if (obsData.length === 0) return;
+        myChart.data.datasets = [myChart.data.datasets[0], myChart.data.datasets[1]];
+        document.querySelectorAll('.t-check').forEach(check => {
+            if (check.checked) {
+                const t = stationsConfig[stationId].thresholds[check.dataset.index];
+                const endX = myChart.data.datasets[1].data.length > 0 ? myChart.data.datasets[1].data[myChart.data.datasets[1].data.length-1].x : obsData[obsData.length-1].x;
+                myChart.data.datasets.push({
+                    label: t.label,
+                    data: [{x: obsData[0].x, y: t.y}, {x: endX, y: t.y}],
+                    borderColor: t.color, borderDash: [10, 5], fill: false, pointRadius: 0, z: 0
+                });
+            }
+        });
+        myChart.update();
+    }
+
+    function updateThresholdUI(stationId) {
+        const group = document.getElementById('thresholdsGroup');
+        group.innerHTML = '';
+        stationsConfig[stationId].thresholds.forEach((t, index) => {
+            group.innerHTML += `<label class="check-item"><input type="checkbox" class="t-check" data-index="${index}" checked onchange="updateChartLines()"> ${t.label}</label>`;
+        });
+    }
+
+    loadSettingsFromURL();
+    initChart();
+    const startStation = document.getElementById('stationSelect').value;
+    updateThresholdUI(startStation);
+    document.getElementById('displayName').innerText = stationsConfig[startStation].name;
+    document.getElementById('displayId').innerText = "Station " + startStation;
+    fetchData();
+    setInterval(fetchData, 60000);
+</script>
+</body>
+</html>
